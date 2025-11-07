@@ -125,6 +125,7 @@ def pagina_pazienti():
                     (nome.strip(), cognome.strip(), cf.strip())
                 )
                 st.success("Paziente aggiunto.")
+                st.rerun()
 
     df = fetch_df("SELECT id, nome, cognome, codice_fiscale FROM pazienti ORDER BY cognome, nome")
     st.dataframe(df if not df.empty else pd.DataFrame())
@@ -152,6 +153,7 @@ def pagina_aggiungi_farmaco():
                     (nome.strip(), principio.strip(), quantita, scadenza_iso, posologia.strip(), note.strip())
                 )
                 st.success(f"Farmaco '{nome.strip()}' salvato.")
+                st.rerun()
 
 def pagina_elenco_farmaci():
     st.header("📦 Elenco farmaci")
@@ -212,33 +214,41 @@ def pagina_prescrizioni():
     farmaci_df = fetch_df("SELECT id, nome FROM farmaci ORDER BY nome")
     
     with st.form("form_prescrizione"):
-        paz_sel = st.selectbox("Seleziona paziente", pazienti_df["paziente"] if not pazienti_df.empty else [])
-        farm_sel = st.selectbox("Seleziona farmaco", farmaci_df["nome"] if not farmaci_df.empty else [])
+        paz_sel = st.selectbox("Seleziona paziente", pazienti_df["paziente"].tolist() if not pazienti_df.empty else [])
+        farm_sel = st.selectbox("Seleziona farmaco", farmaci_df["nome"].tolist() if not farmaci_df.empty else [])
         posologia = st.text_input("Posologia")
-        durata = st.number_input("Durata (giorni)", min_value=1, step=1)
+        durata = st.number_input("Durata (giorni)", min_value=1, step=1, value=1)
         data_inizio_dt = st.date_input("Data inizio")
         piano = st.text_area("Piano terapeutico / note")
         submit = st.form_submit_button("Registra prescrizione & consegna")
         if submit:
-            if paz_sel == "" or farm_sel == "":
-                st.error("Seleziona paziente e farmaco.")
-            else:
+            if not pazienti_df.empty and not farmaci_df.empty and paz_sel and farm_sel:
                 id_paz = pazienti_df.loc[pazienti_df["paziente"] == paz_sel, "id"].values[0]
                 id_farm = farmaci_df.loc[farmaci_df["nome"] == farm_sel, "id"].values[0]
                 aggiungi_prescrizione(id_paz, id_farm, posologia.strip(), int(durata), date_to_iso(data_inizio_dt), piano.strip())
                 st.success("Prescrizione registrata e consegna annotata.")
+                st.rerun()
+            else:
+                st.error("Seleziona paziente e farmaco.")
 
+    st.subheader("Prescrizioni registrate")
     df_pres = fetch_df("""
-        SELECT pr.id, pa.nome || ' ' || pa.cognome AS paziente, f.nome AS farmaco,
-               pr.posologia, pr.durata_giorni, pr.data_inizio
+        SELECT pr.id, 
+               COALESCE(pa.nome || ' ' || pa.cognome, 'N/A') AS paziente, 
+               COALESCE(f.nome, 'N/A') AS farmaco,
+               pr.posologia, 
+               pr.durata_giorni, 
+               pr.data_inizio
         FROM prescrizioni pr
         LEFT JOIN pazienti pa ON pr.id_paziente = pa.id
         LEFT JOIN farmaci f ON pr.id_farmaco = f.id
         ORDER BY pr.data_inizio DESC
     """)
     if not df_pres.empty:
-        df_pres["Data inizio"] = pd.to_datetime(df_pres["data_inizio"], errors="coerce").dt.strftime("%d/%m/%Y")
-        st.dataframe(df_pres[["paziente","farmaco","posologia","durata_giorni","Data inizio"]])
+        df_pres["data_inizio_formatted"] = pd.to_datetime(df_pres["data_inizio"], errors="coerce").dt.strftime("%d/%m/%Y")
+        df_display = df_pres[["paziente","farmaco","posologia","durata_giorni","data_inizio_formatted"]].copy()
+        df_display.columns = ["Paziente", "Farmaco", "Posologia", "Durata (gg)", "Data inizio"]
+        st.dataframe(df_display, use_container_width=True)
     else:
         st.info("Nessuna prescrizione registrata.")
 
